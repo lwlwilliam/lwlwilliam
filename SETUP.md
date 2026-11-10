@@ -145,7 +145,7 @@ on:
 | `LANGUAGE_STATS_WORKERS` | `4` | 同时下载和分析的仓库数 |
 | `LANGUAGE_STATS_CLOC_EXCLUDE_DIRS` | 常见依赖/构建目录 | 传给 `cloc --exclude-dir` 的目录名 |
 | `LANGUAGE_STATS_CLOC_TIMEOUT` | `900` | 单个仓库的 `cloc` 超时秒数 |
-| `LANGUAGE_STATS_TITLE` | `语言代码行数占比` | 卡片标题 |
+| `LANGUAGE_STATS_TITLE` | `语言使用占比` | 卡片标题 |
 
 语言白名单直接编辑：
 

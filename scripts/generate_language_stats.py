@@ -595,12 +595,8 @@ def render_svg(
     *,
     username: str,
     rows: list[LanguageRow],
-    repo_count: int,
-    eligible_repo_count: int | None = None,
-    total_lines: int,
     language_count: int,
-    scope_label: str,
-    title: str = "语言代码行数占比",
+    title: str = "语言使用占比",
 ) -> str:
     """Render a dependency-free, script-free SVG card."""
     card_width = 520
@@ -612,27 +608,14 @@ def render_svg(
     height = 114 + row_count * row_height
 
     title_text = _text(title)
-    if eligible_repo_count is None:
-        eligible_repo_count = repo_count
-    if eligible_repo_count > repo_count:
-        subtitle = (
-            f"@{_text(username)} · {eligible_repo_count} 个{_text(scope_label)}中"
-            f" {repo_count} 个有可统计代码"
-        )
-    else:
-        subtitle = (
-            f"@{_text(username)} · {repo_count} 个{_text(scope_label)}的代码行数"
-        )
-    if total_lines:
+    subtitle = f"@{_text(username)}"
+    if rows:
         shown_note = (
             f" · 显示前 {len(rows)}" if language_count > len(rows) else ""
         )
-        footer = (
-            f"cloc 有效代码行数 {total_lines:,} 行 · "
-            f"共 {language_count} 种语言{shown_note}"
-        )
+        footer = f"cloc · 共 {language_count} 种语言{shown_note}"
     else:
-        footer = "尚未找到可统计的代码行数"
+        footer = "尚未找到可统计的语言数据"
 
     parts: list[str] = [
         (
@@ -676,7 +659,7 @@ def render_svg(
     if not rows:
         parts.append(
             f'<text class="lang" x="{bar_x}" y="{first_row_y}">'
-            "尚未找到可统计的代码行数。</text>"
+            "尚未找到可统计的语言数据。</text>"
         )
     else:
         for index, row in enumerate(rows):
@@ -813,15 +796,10 @@ def generate(
         exclude_languages=exclude_languages,
     )
 
-    scope_label = "公开及私有仓库" if include_private else "公开仓库"
     svg = render_svg(
         username=username,
         rows=rows,
-        repo_count=repo_count,
-        eligible_repo_count=len(repos),
-        total_lines=total_lines,
         language_count=language_count,
-        scope_label=scope_label,
         title=title,
     )
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -870,7 +848,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--title",
-        default=os.getenv("LANGUAGE_STATS_TITLE", "语言代码行数占比"),
+        default=os.getenv("LANGUAGE_STATS_TITLE", "语言使用占比"),
         help="Card title",
     )
     parser.add_argument(

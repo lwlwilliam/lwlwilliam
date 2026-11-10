@@ -158,10 +158,7 @@ class RenderTests(unittest.TestCase):
         svg = render_svg(
             username='user<&"',
             rows=rows,
-            repo_count=repos,
-            total_lines=total,
             language_count=language_count,
-            scope_label="公开及私有仓库",
         )
         self.assertNotIn("<script>", svg)
         self.assertIn("&lt;script&gt;", svg)
@@ -176,14 +173,12 @@ class RenderTests(unittest.TestCase):
         svg = render_svg(
             username="alice",
             rows=rows,
-            repo_count=repos,
-            total_lines=total,
             language_count=language_count,
-            scope_label="公开及私有仓库",
         )
         self.assertIn("cloc", svg)
         self.assertIn("共 3 种语言", svg)
         self.assertIn("显示前 2", svg)
+        self.assertNotIn(" 行", svg)
 
     def test_unknown_language_has_stable_color(self) -> None:
         self.assertEqual(language_color("SomeNewLang"), language_color("somenewlang"))

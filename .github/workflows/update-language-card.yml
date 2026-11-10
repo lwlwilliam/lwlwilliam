@@ -56,7 +56,7 @@ jobs:
           LANGUAGE_STATS_WORKERS: "4"
           LANGUAGE_STATS_CLOC_EXCLUDE_DIRS: ".git,node_modules,vendor,dist,build,target,coverage,.venv,venv,__pycache__,Pods,.next,.nuxt"
           LANGUAGE_STATS_CLOC_TIMEOUT: "900"
-          LANGUAGE_STATS_TITLE: "语言代码行数占比"
+          LANGUAGE_STATS_TITLE: "语言使用占比"
         run: python scripts/generate_language_stats.py
 
       - name: Commit the updated card
