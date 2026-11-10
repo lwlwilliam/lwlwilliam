@@ -1,12 +1,51 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="520" height="150" viewBox="0 0 520 150" role="img" aria-labelledby="card-title card-desc">
-<title id="card-title">@your-github-name 的语言代码行数占比</title>
-<desc id="card-desc">统计仓库默认分支中的有效代码行数，空行和注释不计入。cloc 结果按语言跨仓库累加。尚未找到可统计的语言数据</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="474" viewBox="0 0 520 474" role="img" aria-labelledby="card-title card-desc">
+<title id="card-title">@lwlwilliam 的语言代码行数占比</title>
+<desc id="card-desc">统计仓库默认分支中的有效代码行数，空行和注释不计入。cloc 结果按语言跨仓库累加。cloc · 共 17 种语言 · 显示前 10</desc>
 <style>
 .card{fill:#ffffff;stroke:#d0d7de;stroke-width:1}.title{fill:#1f2328;font:600 19px -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","PingFang SC","Microsoft YaHei",sans-serif}.subtitle{fill:#59636e;font:12px -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","PingFang SC","Microsoft YaHei",sans-serif}.lang{fill:#1f2328;font:13px -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","PingFang SC","Microsoft YaHei",sans-serif}.pct{fill:#59636e;font:600 12px -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",sans-serif}.track{fill:#eaeef2}.footer{fill:#59636e;font:11px -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","PingFang SC","Microsoft YaHei",sans-serif}@media (prefers-color-scheme:dark){.card{fill:#0d1117;stroke:#30363d}.title,.lang{fill:#e6edf3}.subtitle,.pct,.footer{fill:#8b949e}.track{fill:#21262d}}
 </style>
-<rect class="card" x="0.5" y="0.5" width="519" height="149" rx="10"/>
+<rect class="card" x="0.5" y="0.5" width="519" height="473" rx="10"/>
 <text class="title" x="24" y="34">语言使用占比</text>
-<text class="subtitle" x="24" y="59">@your-github-name</text>
-<text class="lang" x="24" y="92">尚未找到可统计的语言数据。</text>
-<text class="footer" x="24" y="134">尚未找到可统计的语言数据</text>
+<text class="subtitle" x="24" y="59">@lwlwilliam</text>
+<text class="lang" x="24" y="92">Go</text>
+<text class="pct" x="496" y="92" text-anchor="end">63.1%</text>
+<rect class="track" x="24" y="101" width="472" height="8" rx="4"/>
+<rect x="24" y="101" width="298.02" height="8" rx="4" fill="#00add8"/>
+<text class="lang" x="24" y="128">JavaScript</text>
+<text class="pct" x="496" y="128" text-anchor="end">21.7%</text>
+<rect class="track" x="24" y="137" width="472" height="8" rx="4"/>
+<rect x="24" y="137" width="102.53" height="8" rx="4" fill="#f1e05a"/>
+<text class="lang" x="24" y="164">PHP</text>
+<text class="pct" x="496" y="164" text-anchor="end">9.0%</text>
+<rect class="track" x="24" y="173" width="472" height="8" rx="4"/>
+<rect x="24" y="173" width="42.71" height="8" rx="4" fill="#4f5d95"/>
+<text class="lang" x="24" y="200">C</text>
+<text class="pct" x="496" y="200" text-anchor="end">4.3%</text>
+<rect class="track" x="24" y="209" width="472" height="8" rx="4"/>
+<rect x="24" y="209" width="20.37" height="8" rx="4" fill="#555555"/>
+<text class="lang" x="24" y="236">Python</text>
+<text class="pct" x="496" y="236" text-anchor="end">0.5%</text>
+<rect class="track" x="24" y="245" width="472" height="8" rx="4"/>
+<rect x="24" y="245" width="2.32" height="8" rx="4" fill="#3572a5"/>
+<text class="lang" x="24" y="272">C++</text>
+<text class="pct" x="496" y="272" text-anchor="end">0.4%</text>
+<rect class="track" x="24" y="281" width="472" height="8" rx="4"/>
+<rect x="24" y="281" width="2.10" height="8" rx="4" fill="#f34b7d"/>
+<text class="lang" x="24" y="308">Ruby</text>
+<text class="pct" x="496" y="308" text-anchor="end">0.2%</text>
+<rect class="track" x="24" y="317" width="472" height="8" rx="4"/>
+<rect x="24" y="317" width="0.88" height="8" rx="4" fill="#701516"/>
+<text class="lang" x="24" y="344">Rust</text>
+<text class="pct" x="496" y="344" text-anchor="end">0.2%</text>
+<rect class="track" x="24" y="353" width="472" height="8" rx="4"/>
+<rect x="24" y="353" width="0.73" height="8" rx="4" fill="#dea584"/>
+<text class="lang" x="24" y="380">awk</text>
+<text class="pct" x="496" y="380" text-anchor="end">0.2%</text>
+<rect class="track" x="24" y="389" width="472" height="8" rx="4"/>
+<rect x="24" y="389" width="0.72" height="8" rx="4" fill="#2ee1b0"/>
+<text class="lang" x="24" y="416">Bourne Shell</text>
+<text class="pct" x="496" y="416" text-anchor="end">0.1%</text>
+<rect class="track" x="24" y="425" width="472" height="8" rx="4"/>
+<rect x="24" y="425" width="0.60" height="8" rx="4" fill="#39d7d0"/>
+<text class="footer" x="24" y="458">cloc · 共 17 种语言 · 显示前 10</text>
 </svg>
