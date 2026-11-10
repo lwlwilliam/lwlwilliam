@@ -2,7 +2,12 @@
 """Generate a self-hosted GitHub language-lines card.
 
 Every eligible repository's default branch is downloaded and analysed with
-cloc. For each language the effective lines of code are summed across all
+cloc. cloc recognises many non-programming file types (Markdown, HTML, SVG,
+C/C++ headers, WSDL, m4, ...), so results are filtered through an explicit
+programming-language allowlist in data/programming_languages.txt. Unknown cloc
+categories are ignored instead of being included accidentally.
+
+For each kept language the effective lines of code are summed across all
 repositories. The displayed percentage is:
 
     total effective lines for that language
@@ -48,13 +53,8 @@ DEFAULT_CLOC_EXCLUDES = (
     ".git,node_modules,vendor,dist,build,target,coverage,"
     ".venv,venv,__pycache__,Pods,.next,.nuxt"
 )
-# Non-programming / markup / data / documentation languages reported by cloc.
-# Names are matched case-insensitively; users can override this list.
-DEFAULT_EXCLUDE_LANGUAGES = (
-    "Markdown,HTML,CSS,SCSS,Sass,Less,XML,YAML,JSON,TOML,INI,"
-    "SQL,PL/SQL,T-SQL,TeX,reStructuredText,AsciiDoc,Text,"
-    "Jupyter Notebook,GraphQL,XSLT,DTD,CSV,"
-    "Makefile,make,Dockerfile,CMake,Meson,HCL,Protocol Buffers"
+DEFAULT_LANGUAGES_FILE = (
+    Path(__file__).resolve().parent.parent / "data" / "programming_languages.txt"
 )
 
 # GitHub Linguist colors for common languages. Unknown languages get a stable
@@ -464,17 +464,36 @@ def count_repository_lines(
         shutil.rmtree(temporary, ignore_errors=True)
 
 
+def load_language_allowlist(path: Path) -> set[str]:
+    """Load a case-insensitive cloc-language allowlist from a text file."""
+    if not path.exists():
+        raise FileNotFoundError(f"Language allowlist not found: {path}")
+    languages: set[str] = set()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        value = line.strip()
+        # Only whole-line comments are ignored. Language names such as C# and
+        # F# contain '#' and must be preserved verbatim.
+        if not value or value.startswith("#"):
+            continue
+        languages.add(value.casefold())
+    if not languages:
+        raise ValueError(f"Language allowlist is empty: {path}")
+    return languages
+
+
 def aggregate_languages(
     per_repo_lines: Iterable[Mapping[str, int]],
     *,
     max_languages: int = DEFAULT_MAX_LANGUAGES,
+    allowed_languages: Iterable[str] | None = None,
     exclude_languages: Iterable[str] = (),
 ) -> tuple[list[LanguageRow], int, int, int]:
     """Sum per-repository line counts and return the top languages.
 
     Percentages use the total line count of *all* aggregated languages as the
-    denominator, including languages outside the displayed top N. Languages in
-    ``exclude_languages`` are removed before the denominator is calculated.
+    denominator, including languages outside the displayed top N. If
+    ``allowed_languages`` is given, only those names are accepted. Languages in
+    ``exclude_languages`` are also removed before the denominator is calculated.
 
     Returns:
         (rows, total_lines, repositories_with_code, language_count)
@@ -486,6 +505,15 @@ def aggregate_languages(
         for language in exclude_languages
         if str(language).strip()
     }
+    allowed = (
+        None
+        if allowed_languages is None
+        else {
+            str(language).strip().casefold()
+            for language in allowed_languages
+            if str(language).strip()
+        }
+    )
 
     for repository_languages in per_repo_lines:
         cleaned = {
@@ -495,6 +523,10 @@ def aggregate_languages(
                 isinstance(line_count, (int, float))
                 and line_count > 0
                 and str(language).strip().casefold() not in excluded
+                and (
+                    allowed is None
+                    or str(language).strip().casefold() in allowed
+                )
             )
         }
         if cleaned:
@@ -652,6 +684,7 @@ def generate(
     include_archived: bool,
     exclude_repos: set[str],
     exclude_languages: set[str],
+    languages_file: Path,
     max_languages: int,
     title: str,
     workers: int,
@@ -659,6 +692,7 @@ def generate(
     cloc_exclude_dirs: str,
     cloc_timeout: int,
 ) -> tuple[list[LanguageRow], int, int, int, int, list[str]]:
+    allowed_languages = load_language_allowlist(languages_file)
     all_repos = list_repositories(username, token, include_private=include_private)
     repos = [
         repo
@@ -711,9 +745,29 @@ def generate(
                 else:
                     print(f"已跳过 {full_name}: 没有可识别的源代码", flush=True)
 
+    excluded_names = {
+        language.casefold() for language in exclude_languages if language.strip()
+    }
+    ignored_totals: Counter[str] = Counter()
+    for repository_languages in per_repo_lines:
+        for language, line_count in repository_languages.items():
+            folded = language.casefold()
+            if folded not in allowed_languages or folded in excluded_names:
+                ignored_totals[language] += int(line_count)
+    if ignored_totals:
+        summary = ", ".join(
+            f"{name} {line_count:,} 行"
+            for name, line_count in ignored_totals.most_common(15)
+        )
+        print(
+            f"已忽略 {len(ignored_totals)} 种非编程/未收录 cloc 分类: {summary}",
+            flush=True,
+        )
+
     rows, total_lines, repo_count, language_count = aggregate_languages(
         per_repo_lines,
         max_languages=max_languages,
+        allowed_languages=allowed_languages,
         exclude_languages=exclude_languages,
     )
 
@@ -792,14 +846,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Comma-separated owner/repo or bare repository names to skip",
     )
     parser.add_argument(
-        "--exclude-languages",
-        default=os.getenv(
-            "LANGUAGE_STATS_EXCLUDE_LANGUAGES", DEFAULT_EXCLUDE_LANGUAGES
+        "--languages-file",
+        type=Path,
+        default=Path(
+            os.getenv("LANGUAGE_STATS_LANGUAGES_FILE", str(DEFAULT_LANGUAGES_FILE))
         ),
         help=(
-            "Comma-separated cloc language names to exclude "
-            "(default: markup, docs, data, styles, SQL, etc.)"
+            "Programming-language allowlist file "
+            f"(default: {DEFAULT_LANGUAGES_FILE})"
         ),
+    )
+    parser.add_argument(
+        "--exclude-languages",
+        default=os.getenv("LANGUAGE_STATS_EXCLUDE_LANGUAGES", ""),
+        help="Optional comma-separated extra cloc language names to exclude",
     )
     parser.add_argument(
         "--workers",
@@ -874,6 +934,7 @@ def main(argv: list[str] | None = None) -> int:
             include_archived=args.include_archived,
             exclude_repos=exclude_repos,
             exclude_languages=exclude_languages,
+            languages_file=args.languages_file,
             max_languages=args.max_languages,
             title=args.title,
             workers=args.workers,

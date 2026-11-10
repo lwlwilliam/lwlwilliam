@@ -1,0 +1,184 @@
+# cloc language names that count as programming/scripting languages.
+# Matching is case-insensitive. One cloc language name per line.
+# Add a cloc category here if a real programming language is missing.
+# Anything not listed is ignored automatically.
+
+# General-purpose and scripting languages
+ABAP
+ActionScript
+Ada
+Agda
+AL
+APL
+AppleScript
+Apex Class
+Apex Trigger
+Arduino Sketch
+ArkTs
+ASP
+ASP.NET
+AspectJ
+Assembly
+AutoHotkey
+awk
+Bourne Again Shell
+Bourne Shell
+BrightScript
+C
+C#
+C++
+C Shell
+C3
+Cadence
+Cairo
+Cangjie
+Carbon
+Chapel
+Circom
+Clarity
+Clean
+Clojure
+ClojureC
+ClojureScript
+COBOL
+CoffeeScript
+ColdFusion
+ColdFusion CFScript
+Coq
+Crystal
+CUDA
+Cython
+D
+Dafny
+Dart
+DenizenScript
+dtrace
+ECPP
+Elixir
+Elixir Script
+Elm
+Erlang
+Expect
+F#
+F# Script
+Fennel
+Fish Shell
+Forth
+Fortran 2003
+Fortran 77
+Fortran 90
+Fortran 95
+Futhark
+GDScript
+Gleam
+Glimmer JavaScript
+Glimmer TypeScript
+GLSL
+Go
+Godot Shaders
+Groovy
+Harbour
+Hare
+Haskell
+Haskell Boot
+Haxe
+HLSL
+HolyC
+Hoon
+Idris
+Igor Pro
+Imba
+Jai
+Janet
+Java
+JavaScript
+JSX
+Julia
+Kotlin
+Korn Shell
+Lean
+lex
+LFE
+Lisp
+Logos
+Logtalk
+Lua
+Luau
+Mathematica
+MATLAB
+Metal
+Modelica
+Mojo
+MoonBit
+MUMPS
+Nemerle
+NetLogo
+Nim
+Nushell
+Objective-C
+Objective-C++
+OCaml
+Odin
+OpenCL
+OpenSCAD
+P4
+Pascal
+Pascal/Pawn
+Pawn
+peg.js
+Perl
+PHP
+PL/I
+PL/M
+Pony
+PowerBuilder
+PowerShell
+Processing
+Prolog
+PureScript
+Python
+R
+Racket
+Raku
+Raku/Prolog
+ReasonML
+ReScript
+Rexx
+Rhai
+Ring
+Ruby
+Rust
+SAS
+Scala
+Scheme
+sed
+Slang
+Smalltalk
+Solidity
+Squirrel
+Standard ML
+Stata
+Swift
+TEAL
+Tcl/Tk
+TypeScript
+Umka
+Vala
+VBA
+VBScript
+Verilog-SystemVerilog
+VHDL
+vim script
+Visual Basic
+Visual Basic .NET
+Visual Fox Pro
+Vyper
+WebAssembly
+WGSL
+Wren
+xBase
+X++
+Xtend
+yacc
+Zig
+zsh

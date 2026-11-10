@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+import tempfile
 import unittest
+from pathlib import Path
 
 from scripts.generate_language_stats import (
+    DEFAULT_LANGUAGES_FILE,
     aggregate_languages,
     language_color,
+    load_language_allowlist,
     parse_cloc_json,
     render_svg,
     should_include_repo,
@@ -64,6 +68,51 @@ class AggregateLanguagesTests(unittest.TestCase):
         self.assertEqual(repos, 1)
         self.assertEqual(language_count, 1)
         self.assertEqual([(row.name, row.line_count) for row in rows], [("Python", 100)])
+
+    def test_default_allowlist_excludes_cloc_helper_categories(self) -> None:
+        allowed = load_language_allowlist(DEFAULT_LANGUAGES_FILE)
+        rows, total, repos, language_count = aggregate_languages(
+            [
+                {
+                    "C": 1000,
+                    "Lua": 100,
+                    "C/C++ Header": 900,
+                    "Web Services Description": 800,
+                    "m4": 700,
+                    "SVG": 600,
+                    "Makefile": 500,
+                }
+            ],
+            allowed_languages=allowed,
+        )
+        self.assertEqual(total, 1100)
+        self.assertEqual(repos, 1)
+        self.assertEqual(language_count, 2)
+        self.assertEqual([row.name for row in rows], ["C", "Lua"])
+
+    def test_allowlist_can_be_supplemented(self) -> None:
+        rows, total, _repos, _language_count = aggregate_languages(
+            [{"CustomLang": 100, "Python": 100}],
+            allowed_languages={"Python", "CustomLang"},
+        )
+        self.assertEqual(total, 200)
+        self.assertEqual({row.name for row in rows}, {"Python", "CustomLang"})
+
+    def test_allowlist_preserves_language_names_containing_hash(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "languages.txt"
+            path.write_text(
+                "# full-line comment\nC#\nF#\nF# Script\n",
+                encoding="utf-8",
+            )
+            allowed = load_language_allowlist(path)
+        self.assertEqual(allowed, {"c#", "f#", "f# script"})
+
+    def test_default_allowlist_contains_csharp_and_fsharp(self) -> None:
+        allowed = load_language_allowlist(DEFAULT_LANGUAGES_FILE)
+        self.assertIn("c#", allowed)
+        self.assertIn("f#", allowed)
+        self.assertIn("f# script", allowed)
 
     def test_empty_input(self) -> None:
         rows, total, repos, language_count = aggregate_languages([{}, {"A": 0}])

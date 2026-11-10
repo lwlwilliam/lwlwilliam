@@ -42,15 +42,17 @@ jobs:
 
       - name: Generate SVG card
         env:
-          # GitHub Actions 自动提供，无需创建任何 Secret。
+          # 自动 token：只用于提交生成后的 SVG。
           GITHUB_TOKEN: ${{ github.token }}
+          # 只读 PAT：用于列出并下载公开 + 私有仓库。
+          # 在仓库 Settings -> Secrets and variables -> Actions 中添加。
+          LANGUAGE_STATS_TOKEN: ${{ secrets.LANGUAGE_STATS_TOKEN }}
           GH_USERNAME: ${{ github.repository_owner }}
-          LANGUAGE_STATS_INCLUDE_FORKS: "true"
+          LANGUAGE_STATS_INCLUDE_FORKS: "false"
           LANGUAGE_STATS_INCLUDE_ARCHIVED: "true"
-          LANGUAGE_STATS_INCLUDE_PRIVATE: "false"
+          LANGUAGE_STATS_INCLUDE_PRIVATE: "true"
           LANGUAGE_STATS_MAX_ROWS: "10"
           LANGUAGE_STATS_EXCLUDE_REPOS: ""
-          LANGUAGE_STATS_EXCLUDE_LANGUAGES: "Markdown,HTML,CSS,SCSS,Sass,Less,XML,YAML,JSON,TOML,INI,SQL,PL/SQL,T-SQL,TeX,reStructuredText,AsciiDoc,Text,Jupyter Notebook,GraphQL,XSLT,DTD,CSV,Makefile,make,Dockerfile,CMake,Meson,HCL,Protocol Buffers"
           LANGUAGE_STATS_WORKERS: "4"
           LANGUAGE_STATS_CLOC_EXCLUDE_DIRS: ".git,node_modules,vendor,dist,build,target,coverage,.venv,venv,__pycache__,Pods,.next,.nuxt"
           LANGUAGE_STATS_CLOC_TIMEOUT: "900"
