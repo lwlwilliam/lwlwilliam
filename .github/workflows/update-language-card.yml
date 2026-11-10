@@ -24,7 +24,8 @@ concurrency:
 jobs:
   update-card:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 需要浅量下载并分析所有仓库，给足时间。
+    timeout-minutes: 120
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -34,18 +35,26 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install cloc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cloc
+
       - name: Generate SVG card
         env:
-          # Built-in ephemeral token; no repository secret to create.
+          # GitHub Actions 自动提供，无需创建任何 Secret。
           GITHUB_TOKEN: ${{ github.token }}
           GH_USERNAME: ${{ github.repository_owner }}
-          LANGUAGE_STATS_INCLUDE_FORKS: "false"
+          LANGUAGE_STATS_INCLUDE_FORKS: "true"
           LANGUAGE_STATS_INCLUDE_ARCHIVED: "true"
           LANGUAGE_STATS_INCLUDE_PRIVATE: "false"
-          LANGUAGE_STATS_MIN_REPO_SHARE: "10"
-          LANGUAGE_STATS_MAX_ROWS: "9"
+          LANGUAGE_STATS_MAX_ROWS: "10"
           LANGUAGE_STATS_EXCLUDE_REPOS: ""
-          LANGUAGE_STATS_TITLE: "语言使用占比"
+          LANGUAGE_STATS_EXCLUDE_LANGUAGES: "Markdown,HTML,CSS,SCSS,Sass,Less,XML,YAML,JSON,TOML,INI,SQL,PL/SQL,T-SQL,TeX,reStructuredText,AsciiDoc,Text,Jupyter Notebook,GraphQL,XSLT,DTD,CSV,Makefile,make,Dockerfile,CMake,Meson,HCL,Protocol Buffers"
+          LANGUAGE_STATS_WORKERS: "4"
+          LANGUAGE_STATS_CLOC_EXCLUDE_DIRS: ".git,node_modules,vendor,dist,build,target,coverage,.venv,venv,__pycache__,Pods,.next,.nuxt"
+          LANGUAGE_STATS_CLOC_TIMEOUT: "900"
+          LANGUAGE_STATS_TITLE: "语言代码行数占比"
         run: python scripts/generate_language_stats.py
 
       - name: Commit the updated card

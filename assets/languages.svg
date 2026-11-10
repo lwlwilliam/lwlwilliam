@@ -1,12 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="520" height="150" viewBox="0 0 520 150" role="img" aria-labelledby="card-title card-desc">
-<title id="card-title">@your-github-name 的语言使用占比</title>
-<desc id="card-desc">按每个仓库内代码占比超过 10% 的语言字节数加权统计。尚未找到可统计的语言数据</desc>
+<title id="card-title">@your-github-name 的语言代码行数占比</title>
+<desc id="card-desc">统计仓库默认分支中的有效代码行数，空行和注释不计入。cloc 结果按语言跨仓库累加。尚未找到可统计的代码行数</desc>
 <style>
 .card{fill:#ffffff;stroke:#d0d7de;stroke-width:1}.title{fill:#1f2328;font:600 19px -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","PingFang SC","Microsoft YaHei",sans-serif}.subtitle{fill:#59636e;font:12px -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","PingFang SC","Microsoft YaHei",sans-serif}.lang{fill:#1f2328;font:13px -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","PingFang SC","Microsoft YaHei",sans-serif}.pct{fill:#59636e;font:600 12px -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",sans-serif}.track{fill:#eaeef2}.footer{fill:#59636e;font:11px -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","PingFang SC","Microsoft YaHei",sans-serif}@media (prefers-color-scheme:dark){.card{fill:#0d1117;stroke:#30363d}.title,.lang{fill:#e6edf3}.subtitle,.pct,.footer{fill:#8b949e}.track{fill:#21262d}}
 </style>
 <rect class="card" x="0.5" y="0.5" width="519" height="149" rx="10"/>
-<text class="title" x="24" y="34">语言使用占比</text>
-<text class="subtitle" x="24" y="59">@your-github-name · 0 个公开仓库中代码占比 >10% 的语言</text>
-<text class="lang" x="24" y="92">没有语言的代码占比超过 10%。</text>
-<text class="footer" x="24" y="134">尚未找到可统计的语言数据</text>
+<text class="title" x="24" y="34">语言代码行数占比</text>
+<text class="subtitle" x="24" y="59">@your-github-name · 0 个公开仓库的代码行数</text>
+<text class="lang" x="24" y="92">尚未找到可统计的代码行数。</text>
+<text class="footer" x="24" y="134">尚未找到可统计的代码行数</text>
 </svg>

@@ -1,125 +1,138 @@
 from __future__ import annotations
 
+import json
 import unittest
 
 from scripts.generate_language_stats import (
     aggregate_languages,
     language_color,
+    parse_cloc_json,
     render_svg,
     should_include_repo,
 )
 
 
 class AggregateLanguagesTests(unittest.TestCase):
-    def test_keeps_languages_above_threshold_and_weights_by_bytes(self) -> None:
-        rows, total, repos, contributing = aggregate_languages(
+    def test_sums_lines_across_repositories(self) -> None:
+        rows, total, repos, language_count = aggregate_languages(
             [
-                # Python is 80%; Shell and HTML are exactly 10% and excluded.
-                {"Python": 800, "Shell": 100, "HTML": 100},
-                # TypeScript is 90%; Python is exactly 10% and excluded.
-                {"Python": 100, "TypeScript": 900},
+                {"Python": 700, "Shell": 200},
+                {"Python": 100, "TypeScript": 800},
             ],
-            min_repo_share=10,
+            max_languages=10,
         )
-        self.assertEqual(total, 1700)
+        self.assertEqual(total, 1800)
         self.assertEqual(repos, 2)
-        self.assertEqual(contributing, 2)
+        self.assertEqual(language_count, 3)
         by_name = {row.name: row for row in rows}
-        self.assertEqual(set(by_name), {"Python", "TypeScript"})
-        self.assertEqual(by_name["Python"].byte_count, 800)
-        self.assertAlmostEqual(by_name["Python"].percentage, 800 / 1700 * 100)
-        self.assertAlmostEqual(by_name["TypeScript"].percentage, 900 / 1700 * 100)
+        self.assertEqual(by_name["TypeScript"].line_count, 800)
+        self.assertEqual(by_name["Python"].line_count, 800)
+        self.assertAlmostEqual(by_name["Python"].percentage, 800 / 1800 * 100)
         self.assertAlmostEqual(sum(row.percentage for row in rows), 100.0)
 
-    def test_filters_small_languages_before_aggregating(self) -> None:
-        rows, total, _repos, _contributing = aggregate_languages(
-            [{"A": 60, "B": 30, "C": 10}],
-            min_repo_share=10,
-        )
-        self.assertEqual(total, 90)
-        self.assertEqual([(row.name, row.byte_count) for row in rows], [("A", 60), ("B", 30)])
-        self.assertAlmostEqual(rows[0].percentage, 60 / 90 * 100)
-        self.assertNotIn("C", {row.name for row in rows})
-
-    def test_repository_without_any_above_threshold_is_skipped(self) -> None:
-        rows, total, repos, contributing = aggregate_languages(
+    def test_percentage_uses_all_languages_but_displays_top_n(self) -> None:
+        rows, total, _repos, language_count = aggregate_languages(
             [
-                {"A": 10, "B": 10, "C": 10, "D": 10, "E": 10,
-                 "F": 10, "G": 10, "H": 10, "I": 10, "J": 10},
+                {"A": 100, "B": 100},
+                {"C": 100, "D": 100},
+                {"E": 100},
             ],
-            min_repo_share=10,
+            max_languages=2,
         )
-        self.assertEqual(rows, [])
-        self.assertEqual(total, 0)
+        self.assertEqual(total, 500)
+        self.assertEqual(language_count, 5)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual({row.name for row in rows}, {"A", "B"})
+        self.assertAlmostEqual(rows[0].percentage, 20.0)
+        self.assertLess(sum(row.percentage for row in rows), 100.0)
+
+    def test_excludes_markup_docs_data_and_sql_languages(self) -> None:
+        rows, total, repos, language_count = aggregate_languages(
+            [
+                {
+                    "Python": 100,
+                    "HTML": 500,
+                    "CSS": 500,
+                    "SQL": 100,
+                    "Markdown": 300,
+                    "YAML": 50,
+                }
+            ],
+            exclude_languages={"HTML", "CSS", "SQL", "Markdown", "YAML"},
+        )
+        self.assertEqual(total, 100)
         self.assertEqual(repos, 1)
-        self.assertEqual(contributing, 0)
-
-    def test_groups_extra_languages_into_other(self) -> None:
-        rows, total, _repos, _contributing = aggregate_languages(
-            [
-                {"A": 100},
-                {"B": 100},
-                {"C": 100},
-                {"D": 100},
-            ],
-            max_languages=3,
-            min_repo_share=10,
-        )
-        self.assertEqual(total, 400)
-        self.assertEqual(len(rows), 3)
-        self.assertEqual(rows[-1].name, "其他")
-        self.assertEqual(rows[-1].byte_count, 200)
-        self.assertAlmostEqual(sum(row.percentage for row in rows), 100.0)
+        self.assertEqual(language_count, 1)
+        self.assertEqual([(row.name, row.line_count) for row in rows], [("Python", 100)])
 
     def test_empty_input(self) -> None:
-        rows, total, repos, contributing = aggregate_languages([{}, {"A": 0}])
+        rows, total, repos, language_count = aggregate_languages([{}, {"A": 0}])
         self.assertEqual(rows, [])
         self.assertEqual(total, 0)
         self.assertEqual(repos, 0)
-        self.assertEqual(contributing, 0)
+        self.assertEqual(language_count, 0)
 
     def test_ties_are_deterministic(self) -> None:
-        rows, _total, _repos, _contributing = aggregate_languages(
-            [{"Zig": 10}, {"Ada": 10}],
-            min_repo_share=10,
+        rows, _total, _repos, _language_count = aggregate_languages(
+            [{"Zig": 10}, {"Ada": 10}]
         )
         self.assertEqual([row.name for row in rows], ["Ada", "Zig"])
 
 
+class ClocParsingTests(unittest.TestCase):
+    def test_parses_code_lines_and_ignores_metadata(self) -> None:
+        payload = {
+            "header": {"cloc_version": "1.0"},
+            "Python": {"blank": 10, "comment": 20, "code": 300},
+            "JavaScript": {"blank": 1, "comment": 2, "code": 100},
+            "SUM": {"blank": 11, "comment": 22, "code": 400},
+        }
+        self.assertEqual(
+            parse_cloc_json(payload),
+            {"Python": 300, "JavaScript": 100},
+        )
+
+    def test_parses_json_with_leading_warning_text(self) -> None:
+        payload = "some warning\n" + json.dumps(
+            {"Python": {"code": 42}, "SUM": {"code": 42}}
+        )
+        self.assertEqual(parse_cloc_json(payload), {"Python": 42})
+
+
 class RenderTests(unittest.TestCase):
     def test_svg_escapes_dynamic_text(self) -> None:
-        rows, total, repos, _contributing = aggregate_languages(
-            [{"<script>": 10, "A&B": 1}],
-            min_repo_share=0,
+        rows, total, repos, language_count = aggregate_languages(
+            [{"<script>": 10, "A&B": 1}]
         )
         svg = render_svg(
             username='user<&"',
             rows=rows,
             repo_count=repos,
-            total_bytes=total,
-            min_repo_share=0,
-            scope_label="公开仓库",
+            total_lines=total,
+            language_count=language_count,
+            scope_label="公开及私有仓库",
         )
         self.assertNotIn("<script>", svg)
         self.assertIn("&lt;script&gt;", svg)
         self.assertIn("user&lt;&amp;&quot;", svg)
         self.assertTrue(svg.startswith("<svg"))
 
-    def test_footer_shows_threshold_and_weighting(self) -> None:
-        rows, total, repos, _contributing = aggregate_languages(
-            [{"Python": 100}],
-            min_repo_share=10,
+    def test_footer_shows_cloc_and_top_n(self) -> None:
+        rows, total, repos, language_count = aggregate_languages(
+            [{"Python": 100}, {"Go": 100}, {"Rust": 100}],
+            max_languages=2,
         )
         svg = render_svg(
             username="alice",
             rows=rows,
             repo_count=repos,
-            total_bytes=total,
-            min_repo_share=10,
-            scope_label="公开仓库",
+            total_lines=total,
+            language_count=language_count,
+            scope_label="公开及私有仓库",
         )
-        self.assertIn("&gt;10%", svg)
-        self.assertIn("按代码字节加权", svg)
+        self.assertIn("cloc", svg)
+        self.assertIn("共 3 种语言", svg)
+        self.assertIn("显示前 2", svg)
 
     def test_unknown_language_has_stable_color(self) -> None:
         self.assertEqual(language_color("SomeNewLang"), language_color("somenewlang"))

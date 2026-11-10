@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Generate a self-hosted GitHub language-usage card.
+"""Generate a self-hosted GitHub language-lines card.
 
-For every eligible repository, languages that account for more than 10% of
-that repository's code are kept. The kept languages are then aggregated by
-their raw byte counts across all repositories, and a language's ratio is:
+Every eligible repository's default branch is downloaded and analysed with
+cloc. For each language the effective lines of code are summed across all
+repositories. The displayed percentage is:
 
-    total bytes of that language in kept entries
-    --------------------------------------------
-       total bytes of all kept language entries
+    total effective lines for that language
+    ---------------------------------------
+      effective lines for all languages
 
-By default only public, non-fork repositories owned by the user are counted.
-No personal access token is required when run from GitHub Actions: the
-ephemeral GITHUB_TOKEN is enough for public repository discovery and for the
-per-repository language endpoints.
+The card lists the top languages by that percentage. Because cloc must inspect
+the source, the run requires read access to every repository. Public-only usage
+can use GitHub Actions' automatic GITHUB_TOKEN; including private repositories
+requires a read-only token stored as a repository secret.
 """
 
 from __future__ import annotations
@@ -23,9 +23,13 @@ import hashlib
 import html
 import json
 import os
+import shutil
+import subprocess
 import sys
+import tempfile
 import time
-from collections import Counter, defaultdict
+import zipfile
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,8 +43,19 @@ API_VERSION = "2022-11-28"
 USER_AGENT = "self-hosted-language-card/1.0"
 PER_PAGE = 100
 DEFAULT_OUTPUT = "assets/languages.svg"
-DEFAULT_MAX_LANGUAGES = 9
-DEFAULT_MIN_REPO_SHARE = 10.0
+DEFAULT_MAX_LANGUAGES = 10
+DEFAULT_CLOC_EXCLUDES = (
+    ".git,node_modules,vendor,dist,build,target,coverage,"
+    ".venv,venv,__pycache__,Pods,.next,.nuxt"
+)
+# Non-programming / markup / data / documentation languages reported by cloc.
+# Names are matched case-insensitively; users can override this list.
+DEFAULT_EXCLUDE_LANGUAGES = (
+    "Markdown,HTML,CSS,SCSS,Sass,Less,XML,YAML,JSON,TOML,INI,"
+    "SQL,PL/SQL,T-SQL,TeX,reStructuredText,AsciiDoc,Text,"
+    "Jupyter Notebook,GraphQL,XSLT,DTD,CSV,"
+    "Makefile,make,Dockerfile,CMake,Meson,HCL,Protocol Buffers"
+)
 
 # GitHub Linguist colors for common languages. Unknown languages get a stable
 # color derived from their name, so the card never depends on an external
@@ -127,10 +142,9 @@ class RateLimitError(GitHubApiError):
 @dataclass(frozen=True)
 class LanguageRow:
     name: str
-    byte_count: int
+    line_count: int
     percentage: float
     color: str
-    is_other: bool = False
 
 
 def env_bool(name: str, default: bool) -> bool:
@@ -264,15 +278,8 @@ def list_repositories(
     return repos
 
 
-def fetch_repo_languages(full_name: str, token: str | None) -> dict[str, int]:
-    data = api_get(f"/repos/{full_name}/languages", token)
-    if not isinstance(data, dict):
-        raise GitHubApiError(f"Unexpected language response for {full_name}")
-    return {
-        str(language): int(byte_count)
-        for language, byte_count in data.items()
-        if isinstance(byte_count, (int, float)) and byte_count > 0
-    }
+class RepositoryUnavailableError(GitHubApiError):
+    """A repository could not be downloaded or analysed."""
 
 
 def should_include_repo(
@@ -306,90 +313,212 @@ def language_color(name: str) -> str:
     return f"#{round(red * 255):02x}{round(green * 255):02x}{round(blue * 255):02x}"
 
 
+def download_repo_archive(
+    full_name: str,
+    token: str | None,
+    destination: Path,
+) -> None:
+    """Download a repository's default-branch zipball through the API."""
+    url = f"{API_ROOT}/repos/{quote(full_name, safe='/')}/zipball"
+    request = Request(url, headers=api_headers(token), method="GET")
+    try:
+        with urlopen(request, timeout=180) as response, destination.open("wb") as handle:
+            shutil.copyfileobj(response, handle)
+    except HTTPError as exc:
+        try:
+            detail = exc.read().decode("utf-8", errors="replace")[:500]
+        except Exception:  # pragma: no cover - defensive
+            detail = ""
+        if exc.code == 404:
+            raise RepositoryUnavailableError(
+                f"{full_name} has no downloadable default branch (404)."
+            ) from exc
+        remaining = exc.headers.get("X-RateLimit-Remaining") if exc.headers else None
+        reset = exc.headers.get("X-RateLimit-Reset") if exc.headers else None
+        if exc.code in {403, 429} and remaining == "0":
+            when = f" (resets at Unix timestamp {reset})" if reset else ""
+            raise RateLimitError(f"GitHub API rate limit exhausted{when}.") from exc
+        raise RepositoryUnavailableError(
+            f"Could not download {full_name}: HTTP {exc.code}. {detail}"
+        ) from exc
+    except URLError as exc:
+        raise RepositoryUnavailableError(
+            f"Could not download {full_name}: {exc.reason}"
+        ) from exc
+
+
+def extract_repo_archive(archive: Path, destination: Path) -> Path:
+    """Extract a GitHub zipball and return its top-level repository directory."""
+    destination.mkdir(parents=True, exist_ok=True)
+    try:
+        with zipfile.ZipFile(archive) as bundle:
+            root = destination.resolve()
+            for member in bundle.infolist():
+                target = (destination / member.filename).resolve()
+                if target != root and root not in target.parents:
+                    raise RepositoryUnavailableError(
+                        "Archive contains an unsafe path and was rejected."
+                    )
+            bundle.extractall(destination)
+    except (zipfile.BadZipFile, zipfile.LargeZipFile) as exc:
+        raise RepositoryUnavailableError("Downloaded archive is not a valid zip file.") from exc
+
+    children = [path for path in destination.iterdir()]
+    if len(children) == 1 and children[0].is_dir():
+        return children[0]
+    return destination
+
+
+def parse_cloc_json(payload: str | bytes | Mapping[str, Any]) -> dict[str, int]:
+    """Return {language: effective code lines} from cloc's JSON output."""
+    if isinstance(payload, bytes):
+        payload = payload.decode("utf-8", errors="replace")
+    if isinstance(payload, str):
+        start = payload.find("{")
+        end = payload.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            raise RepositoryUnavailableError("cloc did not return JSON.")
+        try:
+            data = json.loads(payload[start : end + 1])
+        except json.JSONDecodeError as exc:
+            raise RepositoryUnavailableError("cloc returned invalid JSON.") from exc
+    else:
+        data = payload
+
+    languages: dict[str, int] = {}
+    for language, values in data.items():
+        if language in {"header", "SUM"} or not isinstance(values, dict):
+            continue
+        code_lines = values.get("code")
+        if isinstance(code_lines, (int, float)) and code_lines > 0:
+            languages[str(language)] = int(code_lines)
+    return languages
+
+
+def count_code_lines(
+    repository_directory: Path,
+    *,
+    cloc_bin: str,
+    exclude_dirs: str,
+    timeout_seconds: int,
+) -> dict[str, int]:
+    """Count effective source-code lines with cloc."""
+    command = [cloc_bin, "--json", "--quiet", "--skip-uniqueness"]
+    if exclude_dirs.strip():
+        command.append(f"--exclude-dir={exclude_dirs.strip()}")
+    command.append(str(repository_directory))
+
+    try:
+        process = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise RepositoryUnavailableError(
+            f"cloc executable not found: {cloc_bin}. Install it or set "
+            "LANGUAGE_STATS_CLOC_BIN."
+        ) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RepositoryUnavailableError(
+            f"cloc timed out after {timeout_seconds}s for {repository_directory.name}."
+        ) from exc
+
+    if process.returncode != 0:
+        detail = (process.stderr or process.stdout or "").strip()[:500]
+        raise RepositoryUnavailableError(
+            f"cloc failed with exit code {process.returncode}: {detail}"
+        )
+    return parse_cloc_json(process.stdout)
+
+
+def count_repository_lines(
+    repo: Mapping[str, Any],
+    *,
+    token: str | None,
+    cloc_bin: str,
+    exclude_dirs: str,
+    timeout_seconds: int,
+) -> dict[str, int]:
+    """Download, extract and line-count one repository's default branch."""
+    full_name = str(repo.get("full_name", ""))
+    if not full_name:
+        raise RepositoryUnavailableError("Repository has no full_name.")
+    if not repo.get("default_branch"):
+        return {}
+
+    temporary = Path(tempfile.mkdtemp(prefix="language-card-"))
+    try:
+        archive = temporary / "repository.zip"
+        download_repo_archive(full_name, token, archive)
+        repository_directory = extract_repo_archive(archive, temporary / "source")
+        return count_code_lines(
+            repository_directory,
+            cloc_bin=cloc_bin,
+            exclude_dirs=exclude_dirs,
+            timeout_seconds=timeout_seconds,
+        )
+    finally:
+        shutil.rmtree(temporary, ignore_errors=True)
+
+
 def aggregate_languages(
-    per_repo_languages: Iterable[Mapping[str, int]],
+    per_repo_lines: Iterable[Mapping[str, int]],
     *,
     max_languages: int = DEFAULT_MAX_LANGUAGES,
-    min_repo_share: float = DEFAULT_MIN_REPO_SHARE,
+    exclude_languages: Iterable[str] = (),
 ) -> tuple[list[LanguageRow], int, int, int]:
-    """Aggregate byte-weighted shares of each repository's major languages.
+    """Sum per-repository line counts and return the top languages.
 
-    A language must account for strictly more than ``min_repo_share`` percent
-    of its own repository to be included. Included byte counts are then summed
-    across repositories. The returned percentage is therefore the language's
-    share of all included code bytes, not a count of top-1/top-2 appearances.
+    Percentages use the total line count of *all* aggregated languages as the
+    denominator, including languages outside the displayed top N. Languages in
+    ``exclude_languages`` are removed before the denominator is calculated.
 
     Returns:
-        (rows, included_bytes, repositories_with_languages,
-         contributing_repositories)
+        (rows, total_lines, repositories_with_code, language_count)
     """
-    bytes_by_language: Counter[str] = Counter()
-    repos_with_languages = 0
-    contributing_repositories = 0
+    totals: Counter[str] = Counter()
+    repositories_with_code = 0
+    excluded = {
+        str(language).strip().casefold()
+        for language in exclude_languages
+        if str(language).strip()
+    }
 
-    for languages in per_repo_languages:
-        positive = {
-            str(name): int(byte_count)
-            for name, byte_count in languages.items()
-            if isinstance(byte_count, (int, float)) and byte_count > 0
+    for repository_languages in per_repo_lines:
+        cleaned = {
+            str(language): int(line_count)
+            for language, line_count in repository_languages.items()
+            if (
+                isinstance(line_count, (int, float))
+                and line_count > 0
+                and str(language).strip().casefold() not in excluded
+            )
         }
-        if not positive:
-            continue
-        repos_with_languages += 1
-        repository_total = sum(positive.values())
-        included = [
-            (name, byte_count)
-            for name, byte_count in positive.items()
-            if repository_total > 0
-            and byte_count / repository_total * 100 > min_repo_share
-        ]
-        if not included:
-            continue
-        contributing_repositories += 1
-        for name, byte_count in included:
-            bytes_by_language[name] += byte_count
+        if cleaned:
+            repositories_with_code += 1
+            totals.update(cleaned)
 
-    total_bytes = sum(bytes_by_language.values())
-    if total_bytes == 0:
-        return [], 0, repos_with_languages, 0
+    total_lines = sum(totals.values())
+    if total_lines == 0:
+        return [], 0, repositories_with_code, 0
 
-    ranked_languages = sorted(
-        bytes_by_language.items(),
-        key=lambda item: (-item[1], item[0].casefold()),
-    )
-
-    if max_languages < 1:
-        max_languages = 1
-
-    if len(ranked_languages) <= max_languages:
-        selected = ranked_languages
-        other_bytes = 0
-    else:
-        # Keep one slot for an "other" aggregate, unless max_languages is 1.
-        keep = max_languages - 1 if max_languages > 1 else max_languages
-        selected = ranked_languages[:keep]
-        other_bytes = sum(byte_count for _, byte_count in ranked_languages[keep:])
-
-    rows: list[LanguageRow] = [
+    ranked = sorted(totals.items(), key=lambda item: (-item[1], item[0].casefold()))
+    limit = max(1, max_languages)
+    selected = ranked[:limit]
+    rows = [
         LanguageRow(
             name=name,
-            byte_count=byte_count,
-            percentage=byte_count / total_bytes * 100,
+            line_count=line_count,
+            percentage=line_count / total_lines * 100,
             color=language_color(name),
         )
-        for name, byte_count in selected
+        for name, line_count in selected
     ]
-    if other_bytes:
-        rows.append(
-            LanguageRow(
-                name="其他",
-                byte_count=other_bytes,
-                percentage=other_bytes / total_bytes * 100,
-                color="#8b949e",
-                is_other=True,
-            )
-        )
-    return rows, total_bytes, repos_with_languages, contributing_repositories
+    return rows, total_lines, repositories_with_code, len(ranked)
+
 
 def _text(value: object) -> str:
     return html.escape(str(value), quote=True)
@@ -410,10 +539,10 @@ def render_svg(
     username: str,
     rows: list[LanguageRow],
     repo_count: int,
-    total_bytes: int,
-    min_repo_share: float,
+    total_lines: int,
+    language_count: int,
     scope_label: str,
-    title: str = "语言使用占比",
+    title: str = "语言代码行数占比",
 ) -> str:
     """Render a dependency-free, script-free SVG card."""
     card_width = 520
@@ -425,16 +554,19 @@ def render_svg(
     height = 114 + row_count * row_height
 
     title_text = _text(title)
-    threshold = f"{min_repo_share:g}%"
     subtitle = (
-        f"@{_text(username)} · {repo_count} 个{_text(scope_label)}中"
-        f"代码占比 >{_text(threshold)} 的语言"
+        f"@{_text(username)} · {repo_count} 个{_text(scope_label)}的代码行数"
     )
-    footer = (
-        f"仅统计仓库内代码占比 >{threshold} 的语言 · 按代码字节加权"
-        if total_bytes
-        else "尚未找到可统计的语言数据"
-    )
+    if total_lines:
+        shown_note = (
+            f" · 显示前 {len(rows)}" if language_count > len(rows) else ""
+        )
+        footer = (
+            f"cloc 有效代码行数 {total_lines:,} 行 · "
+            f"共 {language_count} 种语言{shown_note}"
+        )
+    else:
+        footer = "尚未找到可统计的代码行数"
 
     parts: list[str] = [
         (
@@ -442,10 +574,11 @@ def render_svg(
             f'height="{height}" viewBox="0 0 {card_width} {height}" '
             'role="img" aria-labelledby="card-title card-desc">'
         ),
-        f"<title id=\"card-title\">@{_text(username)} 的语言使用占比</title>",
+        f"<title id=\"card-title\">@{_text(username)} 的语言代码行数占比</title>",
         (
-            f'<desc id="card-desc">按每个仓库内代码占比超过 {_text(threshold)} '
-            f'的语言字节数加权统计。{_text(footer)}</desc>'
+            '<desc id="card-desc">统计仓库默认分支中的有效代码行数，'
+            '空行和注释不计入。cloc 结果按语言跨仓库累加。'
+            f'{_text(footer)}</desc>'
         ),
         "<style>",
         (
@@ -477,7 +610,7 @@ def render_svg(
     if not rows:
         parts.append(
             f'<text class="lang" x="{bar_x}" y="{first_row_y}">'
-            f"没有语言的代码占比超过 {_text(threshold)}。</text>"
+            "尚未找到可统计的代码行数。</text>"
         )
     else:
         for index, row in enumerate(rows):
@@ -518,11 +651,14 @@ def generate(
     include_forks: bool,
     include_archived: bool,
     exclude_repos: set[str],
+    exclude_languages: set[str],
     max_languages: int,
-    min_repo_share: float,
     title: str,
     workers: int,
-) -> tuple[list[LanguageRow], int, int]:
+    cloc_bin: str,
+    cloc_exclude_dirs: str,
+    cloc_timeout: int,
+) -> tuple[list[LanguageRow], int, int, int, int, list[str]]:
     all_repos = list_repositories(username, token, include_private=include_private)
     repos = [
         repo
@@ -535,13 +671,21 @@ def generate(
         )
     ]
 
-    per_repo_languages: list[Mapping[str, int]] = []
+    per_repo_lines: list[Mapping[str, int]] = []
     skipped: list[str] = []
+    processed = 0
     if repos:
         max_workers = max(1, min(workers, len(repos)))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_repo = {
-                executor.submit(fetch_repo_languages, str(repo["full_name"]), token): repo
+                executor.submit(
+                    count_repository_lines,
+                    repo,
+                    token=token,
+                    cloc_bin=cloc_bin,
+                    exclude_dirs=cloc_exclude_dirs,
+                    timeout_seconds=cloc_timeout,
+                ): repo
                 for repo in repos
             }
             for future in as_completed(future_to_repo):
@@ -553,25 +697,33 @@ def generate(
                     for pending in future_to_repo:
                         pending.cancel()
                     raise
-                except GitHubApiError as exc:
+                except (GitHubApiError, OSError) as exc:
                     skipped.append(f"{full_name}: {exc}")
                     continue
+                processed += 1
                 if languages:
-                    per_repo_languages.append(languages)
+                    per_repo_lines.append(languages)
+                    print(
+                        f"已统计 {full_name}: "
+                        f"{sum(languages.values()):,} 行，{len(languages)} 种语言",
+                        flush=True,
+                    )
+                else:
+                    print(f"已跳过 {full_name}: 没有可识别的源代码", flush=True)
 
-    rows, total_bytes, _repos_with_languages, contributing_repos = aggregate_languages(
-        per_repo_languages,
+    rows, total_lines, repo_count, language_count = aggregate_languages(
+        per_repo_lines,
         max_languages=max_languages,
-        min_repo_share=min_repo_share,
+        exclude_languages=exclude_languages,
     )
 
-    scope_label = "仓库" if include_private else "公开仓库"
+    scope_label = "公开及私有仓库" if include_private else "公开仓库"
     svg = render_svg(
         username=username,
         rows=rows,
-        repo_count=contributing_repos,
-        total_bytes=total_bytes,
-        min_repo_share=min_repo_share,
+        repo_count=repo_count,
+        total_lines=total_lines,
+        language_count=language_count,
         scope_label=scope_label,
         title=title,
     )
@@ -582,12 +734,14 @@ def generate(
 
     if skipped:
         print(
-            f"警告：跳过了 {len(skipped)} 个仓库的语言查询。",
+            f"警告：跳过了 {len(skipped)} 个仓库。",
             file=sys.stderr,
         )
-        for line in skipped[:10]:
+        for line in skipped[:20]:
             print(f"  - {line}", file=sys.stderr)
-    return rows, total_bytes, contributing_repos
+        if len(skipped) > 20:
+            print(f"  ... 另有 {len(skipped) - 20} 个", file=sys.stderr)
+    return rows, total_lines, repo_count, language_count, processed, skipped
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -607,22 +761,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-languages",
         type=int,
         default=int(os.getenv("LANGUAGE_STATS_MAX_ROWS", DEFAULT_MAX_LANGUAGES)),
-        help=f"Maximum rows before grouping into 其他 (default: {DEFAULT_MAX_LANGUAGES})",
-    )
-    parser.add_argument(
-        "--min-repo-share",
-        type=float,
-        default=float(
-            os.getenv("LANGUAGE_STATS_MIN_REPO_SHARE", str(DEFAULT_MIN_REPO_SHARE))
-        ),
-        help=(
-            "Include a language only when it exceeds this percentage inside "
-            f"its own repository (default: {DEFAULT_MIN_REPO_SHARE:g}%%)."
-        ),
+        help=f"Number of top languages to display (default: {DEFAULT_MAX_LANGUAGES})",
     )
     parser.add_argument(
         "--title",
-        default=os.getenv("LANGUAGE_STATS_TITLE", "语言使用占比"),
+        default=os.getenv("LANGUAGE_STATS_TITLE", "语言代码行数占比"),
         help="Card title",
     )
     parser.add_argument(
@@ -641,7 +784,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--include-private",
         action=argparse.BooleanOptionalAction,
         default=env_bool("LANGUAGE_STATS_INCLUDE_PRIVATE", False),
-        help="Count private repos; requires a token with repo access (default: false)",
+        help="Count private repos; requires a repo-read token (default: false)",
     )
     parser.add_argument(
         "--exclude-repos",
@@ -649,10 +792,36 @@ def build_parser() -> argparse.ArgumentParser:
         help="Comma-separated owner/repo or bare repository names to skip",
     )
     parser.add_argument(
+        "--exclude-languages",
+        default=os.getenv(
+            "LANGUAGE_STATS_EXCLUDE_LANGUAGES", DEFAULT_EXCLUDE_LANGUAGES
+        ),
+        help=(
+            "Comma-separated cloc language names to exclude "
+            "(default: markup, docs, data, styles, SQL, etc.)"
+        ),
+    )
+    parser.add_argument(
         "--workers",
         type=int,
-        default=int(os.getenv("LANGUAGE_STATS_WORKERS", "6")),
-        help="Concurrent language API requests (default: 6)",
+        default=int(os.getenv("LANGUAGE_STATS_WORKERS", "4")),
+        help="Concurrent repository downloads/cloc runs (default: 4)",
+    )
+    parser.add_argument(
+        "--cloc-bin",
+        default=os.getenv("LANGUAGE_STATS_CLOC_BIN", "cloc"),
+        help="Path to the cloc executable (default: cloc)",
+    )
+    parser.add_argument(
+        "--cloc-exclude-dirs",
+        default=os.getenv("LANGUAGE_STATS_CLOC_EXCLUDE_DIRS", DEFAULT_CLOC_EXCLUDES),
+        help="Comma-separated directory names excluded from cloc",
+    )
+    parser.add_argument(
+        "--cloc-timeout",
+        type=int,
+        default=int(os.getenv("LANGUAGE_STATS_CLOC_TIMEOUT", "900")),
+        help="Per-repository cloc timeout in seconds (default: 900)",
     )
     return parser
 
@@ -672,16 +841,31 @@ def main(argv: list[str] | None = None) -> int:
     if args.workers < 1:
         print("错误：--workers 必须大于等于 1。", file=sys.stderr)
         return 2
-    if not 0 <= args.min_repo_share < 100:
-        print("错误：--min-repo-share 必须在 [0, 100) 区间内。", file=sys.stderr)
+    if args.cloc_timeout < 1:
+        print("错误：--cloc-timeout 必须大于等于 1。", file=sys.stderr)
         return 2
 
-    token = os.getenv("LANGUAGE_STATS_TOKEN") or os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
+    configured_token = os.getenv("LANGUAGE_STATS_TOKEN")
+    if (
+        args.include_private
+        and os.getenv("GITHUB_ACTIONS") == "true"
+        and not configured_token
+    ):
+        print(
+            "错误：统计私有仓库需要先在仓库 Actions Secret 中配置 "
+            "LANGUAGE_STATS_TOKEN（只读 PAT）。",
+            file=sys.stderr,
+        )
+        return 2
+    token = configured_token or os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
     exclude_repos = {
         item.strip() for item in args.exclude_repos.split(",") if item.strip()
     }
+    exclude_languages = {
+        item.strip() for item in args.exclude_languages.split(",") if item.strip()
+    }
     try:
-        rows, total, repo_count = generate(
+        rows, total_lines, repo_count, language_count, processed, _skipped = generate(
             username=username,
             token=token,
             output=args.output,
@@ -689,18 +873,22 @@ def main(argv: list[str] | None = None) -> int:
             include_forks=args.include_forks,
             include_archived=args.include_archived,
             exclude_repos=exclude_repos,
+            exclude_languages=exclude_languages,
             max_languages=args.max_languages,
-            min_repo_share=args.min_repo_share,
             title=args.title,
             workers=args.workers,
+            cloc_bin=args.cloc_bin,
+            cloc_exclude_dirs=args.cloc_exclude_dirs,
+            cloc_timeout=args.cloc_timeout,
         )
     except (GitHubApiError, OSError) as exc:
         print(f"错误：{exc}", file=sys.stderr)
         return 1
 
     print(
-        f"已生成 {args.output}：{len(rows)} 行，{repo_count} 个仓库参与统计，"
-        f"计入 {total} 字节。"
+        f"已生成 {args.output}：{len(rows)} 行，{repo_count} 个仓库有代码，"
+        f"共 {total_lines:,} 行、{language_count} 种语言；"
+        f"扫描 {processed} 个仓库。"
     )
     return 0
 
