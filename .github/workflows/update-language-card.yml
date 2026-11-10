@@ -1,0 +1,61 @@
+name: Update language card
+
+on:
+  schedule:
+    # 每天 03:17 UTC（北京时间 11:17）自动运行一次。
+    # GitHub 在高峰时段可能延迟几分钟到几十分钟，这是正常现象。
+    - cron: "17 3 * * *"
+  push:
+    branches: [main]
+    # 首次推送 workflow 时立即跑一次；之后由上面的 cron 每天自动更新。
+    # 忽略 Actions 自己提交 SVG 产生的 push，避免循环触发。
+    paths-ignore:
+      - assets/languages.svg
+  # 仅保留给调试用，日常和首次运行都不需要手动点它。
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-language-card
+  cancel-in-progress: true
+
+jobs:
+  update-card:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Generate SVG card
+        env:
+          # Built-in ephemeral token; no repository secret to create.
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_USERNAME: ${{ github.repository_owner }}
+          LANGUAGE_STATS_INCLUDE_FORKS: "false"
+          LANGUAGE_STATS_INCLUDE_ARCHIVED: "true"
+          LANGUAGE_STATS_INCLUDE_PRIVATE: "false"
+          LANGUAGE_STATS_MIN_REPO_SHARE: "10"
+          LANGUAGE_STATS_MAX_ROWS: "9"
+          LANGUAGE_STATS_EXCLUDE_REPOS: ""
+          LANGUAGE_STATS_TITLE: "语言使用占比"
+        run: python scripts/generate_language_stats.py
+
+      - name: Commit the updated card
+        run: |
+          if git diff --quiet -- assets/languages.svg; then
+            echo "Language card is already up to date."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/languages.svg
+          git commit -m "chore: update language card"
+          git push

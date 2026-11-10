@@ -1,1 +1,7 @@
-![lwlwilliam language stats](https://github-readme-stats.vercel.app/api/top-langs/?username=lwlwilliam&layout=compact&icon_color=805AD5&text_color=718096&bg_color=ffffff00&hide_border=true&langs_count=10)
+<div align="center">
+
+# 👋 你好，我是 lwlwilliam
+
+<img src="./assets/languages.svg" alt="lwlwilliam 的语言使用占比" width="520" />
+
+</div>
