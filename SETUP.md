@@ -39,6 +39,44 @@ cloc --show-lang
 
 当前白名单已与 cloc 2.11 的 `--show-lang` 列表逐项比对，178 项全部匹配。卡片上的名称来自 cloc，和 GitHub Linguist 的显示名在主流语言上一致；少数 cloc 特有分类可能使用不同名称。如果看到真正的编程语言未收录，把它加进白名单即可。
 
+## 排除某些仓库
+
+`username/username` 个人主页仓库会**自动排除**，不需要手动配置。因为本模板的 Python 脚本也放在这个仓库里，如果不排除，主页仓库自己也会被算进语言占比。
+
+有些仓库不是 fork，但也不是你自己写的。可以编辑：
+
+```text
+data/excluded_repos.txt
+```
+
+一行写一个仓库，两种写法都支持：
+
+```text
+old-project
+lwlwilliam/old-project
+```
+
+以 `#` 开头的行是注释；匹配时忽略大小写。这个文件里的仓库不会参与语言统计。
+
+也可以在 workflow 中用环境变量临时追加：
+
+```yaml
+LANGUAGE_STATS_EXCLUDE_REPOS: "repo-a,owner/repo-b"
+```
+
+### 卡片里的仓库数为什么可能比 GitHub 少
+
+卡片副标题显示的是“扫描仓库数中，有多少个仓库有可统计的编程语言代码”，不是 GitHub 仓库总数。以下情况不会计入“有代码”的仓库：
+
+- 仓库只有 README、Markdown、配置、HTML/CSS 等被白名单排除的内容；
+- 仓库是空的，或没有默认分支；
+- 仓库下载/分析失败；
+- 仓库在 `data/excluded_repos.txt` 中被排除；
+- `username/username` 个人主页仓库（自动排除）；
+- fork（默认不统计）。
+
+Actions 日志会输出总数：扫描了多少个、成功分析多少个、多少个有可统计代码、多少个没有代码、多少个失败。这样可以直接定位差异。
+
 ## 必须配置只读 Token
 
 GitHub Actions 自动提供的 `GITHUB_TOKEN` 只对当前这个个人主页仓库有效，**不能读取你名下的其他私有仓库**。所以统计私有仓库必须额外提供一个只读 PAT。
@@ -102,7 +140,8 @@ on:
 | `LANGUAGE_STATS_INCLUDE_ARCHIVED` | `true` | 是否统计 archived 仓库 |
 | `LANGUAGE_STATS_INCLUDE_PRIVATE` | `true` | 是否统计私有仓库；需要 `LANGUAGE_STATS_TOKEN` |
 | `LANGUAGE_STATS_MAX_ROWS` | `10` | 显示占比最高的多少门语言 |
-| `LANGUAGE_STATS_EXCLUDE_REPOS` | 空 | 逗号分隔的排除列表，例如 `repo-a,owner/repo-b` |
+| `LANGUAGE_STATS_EXCLUDE_REPOS` | 空 | 额外用逗号分隔的排除列表，例如 `repo-a,owner/repo-b` |
+| `LANGUAGE_STATS_EXCLUDE_REPOS_FILE` | `data/excluded_repos.txt` | 仓库排除文件路径 |
 | `LANGUAGE_STATS_WORKERS` | `4` | 同时下载和分析的仓库数 |
 | `LANGUAGE_STATS_CLOC_EXCLUDE_DIRS` | 常见依赖/构建目录 | 传给 `cloc --exclude-dir` 的目录名 |
 | `LANGUAGE_STATS_CLOC_TIMEOUT` | `900` | 单个仓库的 `cloc` 超时秒数 |
@@ -149,6 +188,7 @@ python3 scripts/generate_language_stats.py
 .github/workflows/update-language-card.yml  # 定时生成并提交卡片
 scripts/generate_language_stats.py          # 下载仓库、调用 cloc、渲染 SVG
 data/programming_languages.txt              # 允许统计的编程语言白名单
+data/excluded_repos.txt                     # 需要排除的仓库
 assets/languages.svg                        # 自动生成的卡片
 README.md                                   # 个人主页内容
 ```

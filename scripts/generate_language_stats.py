@@ -56,6 +56,9 @@ DEFAULT_CLOC_EXCLUDES = (
 DEFAULT_LANGUAGES_FILE = (
     Path(__file__).resolve().parent.parent / "data" / "programming_languages.txt"
 )
+DEFAULT_EXCLUDED_REPOS_FILE = (
+    Path(__file__).resolve().parent.parent / "data" / "excluded_repos.txt"
+)
 
 # GitHub Linguist colors for common languages. Unknown languages get a stable
 # color derived from their name, so the card never depends on an external
@@ -282,6 +285,12 @@ class RepositoryUnavailableError(GitHubApiError):
     """A repository could not be downloaded or analysed."""
 
 
+def is_profile_repository(repo: Mapping[str, Any], username: str) -> bool:
+    """Return True for the username/username profile README repository."""
+    full_name = str(repo.get("full_name", ""))
+    return full_name.casefold() == f"{username}/{username}".casefold()
+
+
 def should_include_repo(
     repo: Mapping[str, Any],
     *,
@@ -481,6 +490,22 @@ def load_language_allowlist(path: Path) -> set[str]:
     return languages
 
 
+def load_repo_exclusions(path: Path) -> set[str]:
+    """Load repository exclusions from a text file.
+
+    Each non-comment line may be either ``owner/repo`` or a bare repository
+    name. A missing file means "no exclusions".
+    """
+    if not path.exists():
+        return set()
+    repositories: set[str] = set()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        value = line.strip()
+        if value and not value.startswith("#"):
+            repositories.add(value)
+    return repositories
+
+
 def aggregate_languages(
     per_repo_lines: Iterable[Mapping[str, int]],
     *,
@@ -571,6 +596,7 @@ def render_svg(
     username: str,
     rows: list[LanguageRow],
     repo_count: int,
+    eligible_repo_count: int | None = None,
     total_lines: int,
     language_count: int,
     scope_label: str,
@@ -586,9 +612,17 @@ def render_svg(
     height = 114 + row_count * row_height
 
     title_text = _text(title)
-    subtitle = (
-        f"@{_text(username)} · {repo_count} 个{_text(scope_label)}的代码行数"
-    )
+    if eligible_repo_count is None:
+        eligible_repo_count = repo_count
+    if eligible_repo_count > repo_count:
+        subtitle = (
+            f"@{_text(username)} · {eligible_repo_count} 个{_text(scope_label)}中"
+            f" {repo_count} 个有可统计代码"
+        )
+    else:
+        subtitle = (
+            f"@{_text(username)} · {repo_count} 个{_text(scope_label)}的代码行数"
+        )
     if total_lines:
         shown_note = (
             f" · 显示前 {len(rows)}" if language_count > len(rows) else ""
@@ -694,10 +728,18 @@ def generate(
 ) -> tuple[list[LanguageRow], int, int, int, int, list[str]]:
     allowed_languages = load_language_allowlist(languages_file)
     all_repos = list_repositories(username, token, include_private=include_private)
+    profile_repos = [repo for repo in all_repos if is_profile_repository(repo, username)]
+    if profile_repos:
+        print(
+            "已自动排除个人主页仓库: "
+            + ", ".join(str(repo.get("full_name", "")) for repo in profile_repos),
+            flush=True,
+        )
     repos = [
         repo
         for repo in all_repos
-        if should_include_repo(
+        if not is_profile_repository(repo, username)
+        and should_include_repo(
             repo,
             include_forks=include_forks,
             include_archived=include_archived,
@@ -776,6 +818,7 @@ def generate(
         username=username,
         rows=rows,
         repo_count=repo_count,
+        eligible_repo_count=len(repos),
         total_lines=total_lines,
         language_count=language_count,
         scope_label=scope_label,
@@ -795,7 +838,15 @@ def generate(
             print(f"  - {line}", file=sys.stderr)
         if len(skipped) > 20:
             print(f"  ... 另有 {len(skipped) - 20} 个", file=sys.stderr)
-    return rows, total_lines, repo_count, language_count, processed, skipped
+    return (
+        rows,
+        total_lines,
+        repo_count,
+        language_count,
+        processed,
+        skipped,
+        len(repos),
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -843,7 +894,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--exclude-repos",
         default=os.getenv("LANGUAGE_STATS_EXCLUDE_REPOS", ""),
-        help="Comma-separated owner/repo or bare repository names to skip",
+        help="Additional comma-separated owner/repo or bare repository names",
+    )
+    parser.add_argument(
+        "--exclude-repos-file",
+        type=Path,
+        default=Path(
+            os.getenv(
+                "LANGUAGE_STATS_EXCLUDE_REPOS_FILE",
+                str(DEFAULT_EXCLUDED_REPOS_FILE),
+            )
+        ),
+        help=(
+            "File containing repositories to exclude, one per line "
+            f"(default: {DEFAULT_EXCLUDED_REPOS_FILE})"
+        ),
     )
     parser.add_argument(
         "--languages-file",
@@ -921,11 +986,20 @@ def main(argv: list[str] | None = None) -> int:
     exclude_repos = {
         item.strip() for item in args.exclude_repos.split(",") if item.strip()
     }
+    exclude_repos.update(load_repo_exclusions(args.exclude_repos_file))
     exclude_languages = {
         item.strip() for item in args.exclude_languages.split(",") if item.strip()
     }
     try:
-        rows, total_lines, repo_count, language_count, processed, _skipped = generate(
+        (
+            rows,
+            total_lines,
+            repo_count,
+            language_count,
+            processed,
+            skipped,
+            eligible_repos,
+        ) = generate(
             username=username,
             token=token,
             output=args.output,
@@ -946,10 +1020,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"错误：{exc}", file=sys.stderr)
         return 1
 
+    repos_without_code = max(0, processed - repo_count)
     print(
-        f"已生成 {args.output}：{len(rows)} 行，{repo_count} 个仓库有代码，"
-        f"共 {total_lines:,} 行、{language_count} 种语言；"
-        f"扫描 {processed} 个仓库。"
+        f"已生成 {args.output}：扫描 {eligible_repos} 个仓库，"
+        f"成功分析 {processed} 个，其中 {repo_count} 个有可统计的编程语言代码，"
+        f"{repos_without_code} 个没有可统计代码，"
+        f"{len(skipped)} 个下载/分析失败；"
+        f"共 {total_lines:,} 行、{language_count} 种语言。"
     )
     return 0
 

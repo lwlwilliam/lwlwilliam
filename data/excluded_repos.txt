@@ -1,0 +1,11 @@
+# username/username 个人主页仓库会由脚本自动排除，不需要写在这里。
+# 一行写一个仓库，支持以下两种写法：
+#
+#   old-project
+#   lwlwilliam/old-project
+#
+# 以 # 开头的行是注释。匹配仓库名时忽略大小写。
+pua
+awesome
+shadowsocks-go
+socks

@@ -8,8 +8,10 @@ from pathlib import Path
 from scripts.generate_language_stats import (
     DEFAULT_LANGUAGES_FILE,
     aggregate_languages,
+    is_profile_repository,
     language_color,
     load_language_allowlist,
+    load_repo_exclusions,
     parse_cloc_json,
     render_svg,
     should_include_repo,
@@ -189,6 +191,36 @@ class RenderTests(unittest.TestCase):
 
 
 class RepositoryFilterTests(unittest.TestCase):
+    def test_detects_profile_repository(self) -> None:
+        self.assertTrue(
+            is_profile_repository(
+                {"full_name": "Alice/Alice"},
+                "alice",
+            )
+        )
+        self.assertFalse(
+            is_profile_repository(
+                {"full_name": "alice/another-repo"},
+                "alice",
+            )
+        )
+
+    def test_loads_repo_exclusions_from_file(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "excluded_repos.txt"
+            path.write_text(
+                "# comment\nold-project\n\nowner/another-repo\n",
+                encoding="utf-8",
+            )
+            excluded = load_repo_exclusions(path)
+        self.assertEqual(excluded, {"old-project", "owner/another-repo"})
+
+    def test_missing_repo_exclusion_file_means_no_exclusions(self) -> None:
+        self.assertEqual(
+            load_repo_exclusions(Path("/path/that/does/not/exist")),
+            set(),
+        )
+
     def test_filters_forks_and_disabled_by_default(self) -> None:
         self.assertFalse(
             should_include_repo(
