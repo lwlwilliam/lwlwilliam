@@ -10,19 +10,19 @@
 <text class="lang" x="24" y="92">Go</text>
 <text class="pct" x="496" y="92" text-anchor="end">63.6%</text>
 <rect class="track" x="24" y="101" width="472" height="8" rx="4"/>
-<rect x="24" y="101" width="300.31" height="8" rx="4" fill="#00add8"/>
+<rect x="24" y="101" width="300.13" height="8" rx="4" fill="#00add8"/>
 <text class="lang" x="24" y="128">JavaScript</text>
 <text class="pct" x="496" y="128" text-anchor="end">21.8%</text>
 <rect class="track" x="24" y="137" width="472" height="8" rx="4"/>
-<rect x="24" y="137" width="102.69" height="8" rx="4" fill="#f1e05a"/>
+<rect x="24" y="137" width="102.90" height="8" rx="4" fill="#f1e05a"/>
 <text class="lang" x="24" y="164">PHP</text>
 <text class="pct" x="496" y="164" text-anchor="end">8.7%</text>
 <rect class="track" x="24" y="173" width="472" height="8" rx="4"/>
-<rect x="24" y="173" width="41.25" height="8" rx="4" fill="#4f5d95"/>
+<rect x="24" y="173" width="41.23" height="8" rx="4" fill="#4f5d95"/>
 <text class="lang" x="24" y="200">C</text>
 <text class="pct" x="496" y="200" text-anchor="end">4.2%</text>
 <rect class="track" x="24" y="209" width="472" height="8" rx="4"/>
-<rect x="24" y="209" width="19.67" height="8" rx="4" fill="#555555"/>
+<rect x="24" y="209" width="19.66" height="8" rx="4" fill="#555555"/>
 <text class="lang" x="24" y="236">Python</text>
 <text class="pct" x="496" y="236" text-anchor="end">0.5%</text>
 <rect class="track" x="24" y="245" width="472" height="8" rx="4"/>
