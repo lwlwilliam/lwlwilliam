@@ -8,21 +8,21 @@
 <text class="title" x="24" y="34">语言使用占比</text>
 <text class="subtitle" x="24" y="59">@lwlwilliam</text>
 <text class="lang" x="24" y="92">Go</text>
-<text class="pct" x="496" y="92" text-anchor="end">64.1%</text>
+<text class="pct" x="496" y="92" text-anchor="end">64.3%</text>
 <rect class="track" x="24" y="101" width="472" height="8" rx="4"/>
-<rect x="24" y="101" width="302.62" height="8" rx="4" fill="#00add8"/>
+<rect x="24" y="101" width="303.32" height="8" rx="4" fill="#00add8"/>
 <text class="lang" x="24" y="128">JavaScript</text>
-<text class="pct" x="496" y="128" text-anchor="end">21.5%</text>
+<text class="pct" x="496" y="128" text-anchor="end">21.4%</text>
 <rect class="track" x="24" y="137" width="472" height="8" rx="4"/>
-<rect x="24" y="137" width="101.41" height="8" rx="4" fill="#f1e05a"/>
+<rect x="24" y="137" width="100.99" height="8" rx="4" fill="#f1e05a"/>
 <text class="lang" x="24" y="164">PHP</text>
 <text class="pct" x="496" y="164" text-anchor="end">8.6%</text>
 <rect class="track" x="24" y="173" width="472" height="8" rx="4"/>
-<rect x="24" y="173" width="40.63" height="8" rx="4" fill="#4f5d95"/>
+<rect x="24" y="173" width="40.47" height="8" rx="4" fill="#4f5d95"/>
 <text class="lang" x="24" y="200">C</text>
 <text class="pct" x="496" y="200" text-anchor="end">4.1%</text>
 <rect class="track" x="24" y="209" width="472" height="8" rx="4"/>
-<rect x="24" y="209" width="19.38" height="8" rx="4" fill="#555555"/>
+<rect x="24" y="209" width="19.30" height="8" rx="4" fill="#555555"/>
 <text class="lang" x="24" y="236">Python</text>
 <text class="pct" x="496" y="236" text-anchor="end">0.5%</text>
 <rect class="track" x="24" y="245" width="472" height="8" rx="4"/>
@@ -30,11 +30,11 @@
 <text class="lang" x="24" y="272">C++</text>
 <text class="pct" x="496" y="272" text-anchor="end">0.4%</text>
 <rect class="track" x="24" y="281" width="472" height="8" rx="4"/>
-<rect x="24" y="281" width="2.00" height="8" rx="4" fill="#f34b7d"/>
+<rect x="24" y="281" width="1.99" height="8" rx="4" fill="#f34b7d"/>
 <text class="lang" x="24" y="308">Ruby</text>
 <text class="pct" x="496" y="308" text-anchor="end">0.2%</text>
 <rect class="track" x="24" y="317" width="472" height="8" rx="4"/>
-<rect x="24" y="317" width="0.84" height="8" rx="4" fill="#701516"/>
+<rect x="24" y="317" width="0.83" height="8" rx="4" fill="#701516"/>
 <text class="lang" x="24" y="344">Rust</text>
 <text class="pct" x="496" y="344" text-anchor="end">0.1%</text>
 <rect class="track" x="24" y="353" width="472" height="8" rx="4"/>
@@ -42,7 +42,7 @@
 <text class="lang" x="24" y="380">awk</text>
 <text class="pct" x="496" y="380" text-anchor="end">0.1%</text>
 <rect class="track" x="24" y="389" width="472" height="8" rx="4"/>
-<rect x="24" y="389" width="0.69" height="8" rx="4" fill="#2ee1b0"/>
+<rect x="24" y="389" width="0.68" height="8" rx="4" fill="#2ee1b0"/>
 <text class="lang" x="24" y="416">Bourne Shell</text>
 <text class="pct" x="496" y="416" text-anchor="end">0.1%</text>
 <rect class="track" x="24" y="425" width="472" height="8" rx="4"/>
